@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { Plus, Minus } from 'lucide-svelte';
 
+	const WIDTH = 1000;
+	const HEIGHT = 600;
+
 	let canvas: HTMLCanvasElement, context: CanvasRenderingContext2D | null;
 
 	onMount(() => {
@@ -28,21 +31,27 @@
 		}
 	}
 
+	// Mouse interaction variables
 	let isMouseDown = false;
 	let mouseX = 0,
 		mouseY = 0,
 		lastMouseX = 0,
 		lastMouseY = 0;
 
-	const WIDTH = 1000;
-	const HEIGHT = 600;
-
-	const particles: Particle[] = [];
-	const NUM_PARTICLES = 5;
+	// Particle system variables
+	const INITIAL_PARTICLES = 5;
 	const MAX_CHARGE = 4;
 	const MIN_CHARGE = 1;
+	const particles: Particle[] = [];
 
-	let TIME_STEP = 0.1;
+	// Timing variables
+	const MAX_STEPS = 10;
+	const DT = 1 / 120;
+	let timeScale = 1; // 1 = real-time, <1 = slow-mo, >1 = fast-forward;
+	let last = performance.now();
+	let acc = 0;
+
+	// Simulation constants
 	const K = 80000; // Coulomb's constant (scaled for simulation)
 	const airResistance = 0.99;
 	const bounce = 0.5;
@@ -75,80 +84,108 @@
 		);
 	}
 
-	for (let i = 0; i < NUM_PARTICLES; i++) {
+	for (let i = 0; i < INITIAL_PARTICLES; i++) {
 		const charge = i % 2 === 0 ? generateRandomCharge(1) : generateRandomCharge(-1);
 		particles.push(generateRandomParticle(charge));
 	}
 
 	function update() {
-		for (const i of particles) {
-			let ax = 0;
-			let ay = 0;
+		const n = particles.length;
 
-			for (const j of particles) {
-				if (i === j) continue;
+		const ax = new Float32Array(n);
+		const ay = new Float32Array(n);
 
-				const dx = j.x - i.x;
-				const dy = j.y - i.y;
-				const distSq = dx ** 2 + dy ** 2 || 0.01; // Prevent division by zero
+		ax.fill(0, 0, n);
+		ay.fill(0, 0, n);
+
+		const EPS = 4; // force softening tweak (2–10)
+		const kSep = 0.6; // positional correction strength (0.2–1.2)
+		const kDamp = 0.25; // normal damping (0.1–0.6)
+
+		for (let a = 0; a < n; a++) {
+			const A = particles[a];
+			for (let b = a + 1; b < n; b++) {
+				const B = particles[b];
+
+				const dx = A.x - B.x;
+				const dy = A.y - B.y;
+
+				// softened distance for force
+				const distSq = dx * dx + dy * dy + EPS * EPS;
 				const dist = Math.sqrt(distSq);
+				const invDist3 = 1 / (distSq * dist);
 
-				const force = Math.abs(K * i.charge * j.charge) / distSq;
+				// signed pair strength
+				const s = K * A.charge * B.charge * invDist3;
 
-				if (i.charge * j.charge > 0) {
-					// Repulsive force
-					ax -= (force * dx) / dist;
-					ay -= (force * dy) / dist;
-				} else {
-					// Attractive force
-					ax += (force * dx) / dist;
-					ay += (force * dy) / dist;
-				}
+				// apply equal/opposite acceleration
+				ax[a] += s * dx;
+				ay[a] += s * dy;
+				ax[b] -= s * dx;
+				ay[b] -= s * dy;
 
-				// To prevent extreme accelerations at very close distances
-				if (dist < i.radius + j.radius) {
-					ax -= (force * dx) / dist;
-					ay -= (force * dy) / dist;
+				// collision stabilization (prevents sticking/jitter)
+				const minDist = A.radius + B.radius;
+				const realDistSq = dx * dx + dy * dy;
+				const realDist = Math.sqrt(realDistSq) || 1e-6;
+
+				if (realDist < minDist) {
+					const nx = dx / realDist;
+					const ny = dy / realDist;
+					const overlap = minDist - realDist;
+
+					// positional correction (split)
+					const corr = overlap * 0.5 * kSep;
+					A.x += nx * corr;
+					A.y += ny * corr;
+					B.x -= nx * corr;
+					B.y -= ny * corr;
+
+					// kill relative velocity into each other (normal damping)
+					const rvx = A.vx - B.vx;
+					const rvy = A.vy - B.vy;
+					const relN = rvx * nx + rvy * ny;
+
+					if (relN < 0) {
+						const damp = -relN * 0.5 * kDamp;
+						A.vx += nx * damp;
+						A.vy += ny * damp;
+						B.vx -= nx * damp;
+						B.vy -= ny * damp;
+					}
 				}
 			}
-
-			if (isMouseDown) {
-				const dist = Math.hypot(mouseX - i.x, mouseY - i.y);
-				if (dist <= i.radius * 2) {
-					const newX = i.x + mouseX;
-					const newY = i.y + mouseY;
-
-					if (newX > i.radius || newX > WIDTH - i.radius) i.x = mouseX;
-					if (newY > i.radius || newY > HEIGHT - i.radius) i.y = mouseY;
-
-					i.vx = (mouseX - lastMouseX) / (TIME_STEP || 0.01);
-					i.vy = (mouseY - lastMouseY) / (TIME_STEP || 0.01);
-				}
-			}
-
-			i.vx += ax * TIME_STEP;
-			i.vy += ay * TIME_STEP;
-
-			// Optional: Apply air resistance
-			// i.vx *= airResistance;
-			// i.vy *= airResistance;
 		}
 
+		// integrate velocities
+		for (let i = 0; i < n; i++) {
+			const p = particles[i];
+			p.vx += ax[i] * DT;
+			p.vy += ay[i] * DT;
+		}
+
+		// integrate positions + walls
 		for (const p of particles) {
-			p.x += p.vx * TIME_STEP;
-			p.y += p.vy * TIME_STEP;
+			if (isMouseDown) {
+				const dist = Math.hypot(mouseX - p.x, mouseY - p.y);
+				if (dist <= p.radius * 2) {
+					p.x = Math.max(p.radius, Math.min(WIDTH - p.radius, mouseX));
+					p.y = Math.max(p.radius, Math.min(HEIGHT - p.radius, mouseY));
+
+					const VMAX = 2000;
+					p.vx = Math.max(-VMAX, Math.min(VMAX, (mouseX - lastMouseX) / DT));
+					p.vy = Math.max(-VMAX, Math.min(VMAX, (mouseY - lastMouseY) / DT));
+				}
+			}
+
+			p.x += p.vx * DT;
+			p.y += p.vy * DT;
 
 			// Boundary conditions
 			if (p.x < p.radius || p.x > WIDTH - p.radius) p.vx *= -bounce;
 			if (p.y < p.radius || p.y > HEIGHT - p.radius) p.vy *= -bounce;
 
 			// Push it out of the wall so it doesn't get stuck
-			if (p.x < p.radius) p.x = p.radius + 1;
-			else if (p.x > WIDTH - p.radius) p.x = WIDTH - p.radius;
-
-			if (p.y < p.radius) p.y = p.radius;
-			else if (p.y > HEIGHT - p.radius) p.y = HEIGHT - p.radius;
-
 			p.x = Math.max(p.radius, Math.min(WIDTH - p.radius, p.x));
 			p.y = Math.max(p.radius, Math.min(HEIGHT - p.radius, p.y));
 		}
@@ -158,6 +195,10 @@
 		if (!context) return;
 		context.clearRect(0, 0, WIDTH, HEIGHT);
 
+		context.font = '18px Arial';
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
+
 		for (const p of particles) {
 			// Draw particle
 			context.beginPath();
@@ -165,11 +206,8 @@
 			context.fillStyle = p.color;
 			context.fill();
 			// Draw charge sign
-			context.font = '18px Arial';
 			context.fillStyle = 'white';
 			context.fillText(`${p.charge > 0 ? '+' : '-'}${Math.abs(p.charge)}`, p.x, p.y);
-			context.textAlign = 'center';
-			context.textBaseline = 'middle';
 
 			// Draw velocity vector
 			const speed = Math.hypot(p.vx, p.vy);
@@ -180,81 +218,98 @@
 			context.beginPath();
 			context.moveTo(startX, startY);
 			context.lineTo(p.x + p.vx, p.y + p.vy);
-			context.strokeStyle = 'red';
+			context.strokeStyle = 'green';
 			context.stroke();
 
-			if (p.charge < 0) continue;
+			if (p.charge > 0) {
+				// Draw field lines
+				context.strokeStyle = 'black';
+				for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4 / Math.abs(p.charge)) {
+					let currentX = p.x + Math.cos(angle) * p.radius;
+					let currentY = p.y + Math.sin(angle) * p.radius;
 
-			// Draw field lines
-			context.strokeStyle = 'black';
-			for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4 / Math.abs(p.charge)) {
-				let currentX = p.x + Math.cos(angle) * p.radius;
-				let currentY = p.y + Math.sin(angle) * p.radius;
+					context.beginPath();
+					context.moveTo(currentX, currentY);
 
-				context.beginPath();
-				context.moveTo(currentX, currentY);
+					// Limit steps so it doesn't freeze
+					outer: for (let step = 0; step < 100; step++) {
+						let netFx = 0;
+						let netFy = 0;
 
-				// Limit steps so it doesn't freeze
-				outer: for (let step = 0; step < 100; step++) {
-					let netFx = 0;
-					let netFy = 0;
+						for (const j of particles) {
+							const dx = currentX - j.x;
+							const dy = currentY - j.y;
+							const distSq = dx ** 2 + dy ** 2 || 0.01;
+							const dist = Math.sqrt(distSq);
 
-					for (const j of particles) {
-						const dx = j.x - currentX;
-						const dy = j.y - currentY;
-						const distSq = dx ** 2 + dy ** 2 || 0.01;
-						const dist = Math.sqrt(distSq);
+							const invDist3 = 1 / (distSq * dist);
+							const s = K * j.charge * invDist3;
 
-						const force = Math.abs(K * 1 * j.charge) / distSq;
-
-						if (j.charge > 0) {
-							// Repulsive force
-							netFx -= (force * dx) / dist;
-							netFy -= (force * dy) / dist;
-						} else {
-							// Attractive force
-							netFx += (force * dx) / dist;
-							netFy += (force * dy) / dist;
+							netFx += s * dx;
+							netFy += s * dy;
 						}
-					}
 
-					const totalForce = Math.hypot(netFx, netFy);
-					if (totalForce <= 0) break;
+						const totalForce = Math.hypot(netFx, netFy);
+						if (totalForce <= 0) break;
 
-					currentX = currentX + (netFx / totalForce) * 5;
-					currentY = currentY + (netFy / totalForce) * 5;
+						currentX = currentX + (netFx / totalForce) * 5;
+						currentY = currentY + (netFy / totalForce) * 5;
 
-					// Check for collision with negative particles
-					for (const j of particles) {
-						if (j.charge >= 0) continue;
-						const dx = currentX - j.x;
-						const dy = currentY - j.y;
+						// Check for collision with negative particles
+						for (const j of particles) {
+							if (j.charge >= 0) continue;
+							const dx = currentX - j.x;
+							const dy = currentY - j.y;
 
-						const dist = Math.hypot(dx, dy);
-						if (dist < j.radius) {
-							context.lineTo(j.x + (dx / dist) * j.radius, j.y + (dy / dist) * j.radius);
-							break outer;
+							const dist = Math.hypot(dx, dy);
+							if (dist < j.radius) {
+								context.lineTo(j.x + (dx / dist) * j.radius, j.y + (dy / dist) * j.radius);
+								break outer;
+							}
 						}
-					}
 
-					context.lineTo(currentX, currentY);
+						context.lineTo(currentX, currentY);
+					}
+					context.stroke();
 				}
+			}
+
+			// Draw outline if mouse is near
+			const mouseDist = Math.hypot(mouseX - p.x, mouseY - p.y);
+			if (mouseDist <= p.radius * 2) {
+				context.beginPath();
+				context.arc(p.x, p.y, p.radius + 5, 0, Math.PI * 2);
+				context.strokeStyle = 'red';
 				context.stroke();
 			}
 		}
 	}
 
-	(function loop() {
-		update();
+	function loop() {
+		const now = performance.now();
+		const frameDt = (now - last) / 1000;
+		last = now;
+
+		// prevent massive dt after tab-switch / lag spikes
+		acc += Math.min(frameDt * timeScale, 0.05);
+
+		let steps = 0;
+		while (acc >= DT && steps < MAX_STEPS) {
+			update();
+			acc -= DT;
+			steps++;
+		}
+
 		draw();
 		requestAnimationFrame(loop);
-	})();
+	}
+	requestAnimationFrame(loop);
 
-	function handleMouseUp(event: MouseEvent) {
+	function handleMouseUp() {
 		isMouseDown = false;
 	}
 
-	function handleMouseDown(event: MouseEvent) {
+	function handleMouseDown() {
 		isMouseDown = true;
 	}
 
@@ -265,6 +320,14 @@
 		const rect = canvas.getBoundingClientRect();
 		mouseX = event.clientX - rect.left;
 		mouseY = event.clientY - rect.top;
+	}
+
+	function handleAuxClick(event: MouseEvent) {
+		event.preventDefault();
+
+		const particle = particles.find((p) => Math.hypot(mouseX - p.x, mouseY - p.y) <= p.radius * 2);
+		if (!particle) return;
+		particles.splice(particles.indexOf(particle), 1);
 	}
 
 	function handleAddParticle(charge: ChargeSign) {
@@ -288,9 +351,9 @@
 							type="range"
 							id="time-step"
 							min="0"
-							max="1"
+							max="10"
 							step="0.01"
-							bind:value={TIME_STEP}
+							bind:value={timeScale}
 						/>
 					</div>
 					<div class="mb-1 flex flex-col">
@@ -317,6 +380,7 @@
 			on:mousedown={handleMouseDown}
 			on:mouseup={handleMouseUp}
 			on:mousemove={handleMoveMouse}
+			on:auxclick={handleAuxClick}
 		></canvas>
 	</div>
 </div>
