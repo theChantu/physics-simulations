@@ -1,4 +1,4 @@
-# Physics Simulations
+# [Physics Simulations](https://thechantu.github.io/physics-simulations/)
 
 ### Prerequisites
 
