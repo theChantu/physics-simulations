@@ -55,6 +55,8 @@
 	const K = 80000; // Coulomb's constant (scaled for simulation)
 	const airResistance = 0.99;
 	const bounce = 0.5;
+	const EPS = 6;
+	const EPS2 = EPS * EPS;
 
 	type ChargeSign = -1 | 1;
 
@@ -98,7 +100,6 @@
 		ax.fill(0, 0, n);
 		ay.fill(0, 0, n);
 
-		const EPS = 4; // force softening tweak (2–10)
 		const kSep = 0.6; // positional correction strength (0.2–1.2)
 		const kDamp = 0.25; // normal damping (0.1–0.6)
 
@@ -111,7 +112,7 @@
 				const dy = A.y - B.y;
 
 				// softened distance for force
-				const distSq = dx * dx + dy * dy + EPS * EPS;
+				const distSq = dx * dx + dy * dy + EPS2;
 				const dist = Math.sqrt(distSq);
 				const invDist3 = 1 / (distSq * dist);
 
@@ -127,7 +128,7 @@
 				// collision stabilization (prevents sticking/jitter)
 				const minDist = A.radius + B.radius;
 				const realDistSq = dx * dx + dy * dy;
-				const realDist = Math.sqrt(realDistSq) || 1e-6;
+				const realDist = Math.sqrt(realDistSq) || EPS;
 
 				if (realDist < minDist) {
 					const nx = dx / realDist;
@@ -191,6 +192,22 @@
 		}
 	}
 
+	const REF = (K * MAX_CHARGE) / (EPS2 * EPS);
+	function forceToColor(totalForce: number): string {
+		const x = Math.abs(totalForce) / REF;
+		// Use sqrt to make the falloff less dramatic (keep it visible)
+		const intensity = Math.min(1, Math.sqrt(x));
+
+		// Map intensity (0 to 1) to Hue (240 is Blue, 0 is Red)
+		// Strong force = Red/Orange (0-30), Weak force = Blue/Purple (200-240)
+		const hue = (1 - intensity) * 240;
+
+		// Use transparency so weak lines fade away smoothly
+		const alpha = Math.max(0.3, intensity);
+
+		return `hsla(${hue}, 100%, 50%, ${alpha})`;
+	}
+
 	function draw() {
 		if (!context) return;
 		context.clearRect(0, 0, WIDTH, HEIGHT);
@@ -228,18 +245,18 @@
 					let currentX = p.x + Math.cos(angle) * p.radius;
 					let currentY = p.y + Math.sin(angle) * p.radius;
 
-					context.beginPath();
-					context.moveTo(currentX, currentY);
-
 					// Limit steps so it doesn't freeze
-					outer: for (let step = 0; step < 100; step++) {
+					outer: for (let step = 0; step < 120; step++) {
 						let netFx = 0;
 						let netFy = 0;
+
+						const prevX = currentX;
+						const prevY = currentY;
 
 						for (const j of particles) {
 							const dx = currentX - j.x;
 							const dy = currentY - j.y;
-							const distSq = dx ** 2 + dy ** 2 || 0.01;
+							const distSq = dx * dx + dy * dy + EPS;
 							const dist = Math.sqrt(distSq);
 
 							const invDist3 = 1 / (distSq * dist);
@@ -252,8 +269,13 @@
 						const totalForce = Math.hypot(netFx, netFy);
 						if (totalForce <= 0) break;
 
-						currentX = currentX + (netFx / totalForce) * 5;
-						currentY = currentY + (netFy / totalForce) * 5;
+						const STEP_MIN = 1;
+						const STEP_MAX = 6;
+						const STEP_K = 80;
+
+						const stepLen = Math.max(STEP_MIN, Math.min(STEP_MAX, STEP_K / (totalForce + 1)));
+						currentX = currentX + (netFx / totalForce) * stepLen;
+						currentY = currentY + (netFy / totalForce) * stepLen;
 
 						// Check for collision with negative particles
 						for (const j of particles) {
@@ -261,16 +283,19 @@
 							const dx = currentX - j.x;
 							const dy = currentY - j.y;
 
-							const dist = Math.hypot(dx, dy);
+							const dist = Math.hypot(dx, dy) || EPS;
 							if (dist < j.radius) {
 								context.lineTo(j.x + (dx / dist) * j.radius, j.y + (dy / dist) * j.radius);
 								break outer;
 							}
 						}
 
+						context.beginPath();
+						context.moveTo(prevX, prevY);
 						context.lineTo(currentX, currentY);
+						context.strokeStyle = forceToColor(totalForce);
+						context.stroke();
 					}
-					context.stroke();
 				}
 			}
 
