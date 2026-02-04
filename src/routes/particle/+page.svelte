@@ -1,15 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { Plus, Minus } from 'lucide-svelte';
 
 	let canvas: HTMLCanvasElement, context: CanvasRenderingContext2D | null;
 
 	onMount(() => {
 		context = canvas.getContext('2d');
 	});
-
-	function sleep(ms: number) {
-		return new Promise((resolve) => setTimeout(resolve, ms));
-	}
 
 	class Particle {
 		x: number;
@@ -42,28 +39,45 @@
 
 	const particles: Particle[] = [];
 	const NUM_PARTICLES = 5;
+	const MAX_CHARGE = 4;
+	const MIN_CHARGE = 1;
+
 	let TIME_STEP = 0.1;
 	const K = 80000; // Coulomb's constant (scaled for simulation)
 	const airResistance = 0.99;
 	const bounce = 0.5;
 
-	for (let i = 0; i < NUM_PARTICLES; i++) {
-		const minCharge = 1;
-		const maxCharge = 4;
-		const charge =
-			i % 2 === 0
-				? Math.round(Math.random() * (maxCharge - 1) + minCharge)
-				: Math.round(Math.random() * (-maxCharge + 1) + -minCharge);
-		particles.push(
-			new Particle(
-				Math.random() * WIDTH,
-				Math.random() * HEIGHT,
-				(Math.random() - 0.5) * 50,
-				(Math.random() - 0.5) * 50,
-				charge,
-				10
-			)
+	type ChargeSign = -1 | 1;
+
+	function generateRandomSign(): ChargeSign {
+		return Math.random() < 0.5 ? -1 : 1;
+	}
+
+	function generateRandomCharge(chargeSign?: ChargeSign) {
+		if (chargeSign === undefined) chargeSign = generateRandomSign();
+
+		const magnitude = Math.floor(Math.random() * (MAX_CHARGE - MIN_CHARGE + 1)) + MIN_CHARGE;
+
+		return chargeSign === 1 ? magnitude : -magnitude;
+	}
+
+	function generateRandomParticle(charge?: number) {
+		const chargeSign = generateRandomSign();
+		if (!charge) charge = generateRandomCharge(chargeSign);
+
+		return new Particle(
+			Math.random() * WIDTH,
+			Math.random() * HEIGHT,
+			(Math.random() - 0.5) * 50,
+			(Math.random() - 0.5) * 50,
+			charge,
+			10
 		);
+	}
+
+	for (let i = 0; i < NUM_PARTICLES; i++) {
+		const charge = i % 2 === 0 ? generateRandomCharge(1) : generateRandomCharge(-1);
+		particles.push(generateRandomParticle(charge));
 	}
 
 	function update() {
@@ -252,49 +266,67 @@
 		mouseX = event.clientX - rect.left;
 		mouseY = event.clientY - rect.top;
 	}
+
+	function handleAddParticle(charge: ChargeSign) {
+		const newParticle = generateRandomParticle(generateRandomCharge(charge));
+		particles.push(newParticle);
+	}
 </script>
 
-<div id="container">
-	<div id="particle-simulation-settings">
-		<h1>Particle Simulation</h1>
-		<div>
-			<div class="particle-simulation-setting">
-				<label for="time-step">Time Step</label>
-				<input type="range" id="time-step" min="0" max="1" step="0.01" bind:value={TIME_STEP} />
+<div class="flex w-full items-center justify-center">
+	<div class="fit flex min-h-screen w-fit flex-col items-center justify-center">
+		<div class="flex self-start">
+			<div id="particle-simulation-settings">
+				<h1 class="text-3xl font-semibold">Particle Simulation</h1>
+				<div class="flex gap-4">
+					<div class="mb-1">
+						<label class="label" for="time-step">
+							<span class="label-text">Time Step</span>
+						</label>
+						<input
+							class="range"
+							type="range"
+							id="time-step"
+							min="0"
+							max="1"
+							step="0.01"
+							bind:value={TIME_STEP}
+						/>
+					</div>
+					<div class="mb-1 flex flex-col">
+						<label class="label" for="time-step">
+							<span class="label-text">Proton</span>
+						</label>
+						<button class="btn btn-error" on:click={() => handleAddParticle(1)}><Plus /></button>
+					</div>
+					<div class="mb-1 flex flex-col">
+						<label class="label" for="time-step">
+							<span class="label-text">Electron</span>
+						</label>
+						<button class="btn btn-primary" on:click={() => handleAddParticle(-1)}><Minus /></button
+						>
+					</div>
+				</div>
 			</div>
 		</div>
+		<canvas
+			id="particle-simulation"
+			bind:this={canvas}
+			width={WIDTH}
+			height={HEIGHT}
+			on:mousedown={handleMouseDown}
+			on:mouseup={handleMouseUp}
+			on:mousemove={handleMoveMouse}
+		></canvas>
 	</div>
-	<canvas
-		id="particle-simulation"
-		bind:this={canvas}
-		width={WIDTH}
-		height={HEIGHT}
-		on:mousedown={handleMouseDown}
-		on:mouseup={handleMouseUp}
-		on:mousemove={handleMoveMouse}
-	></canvas>
 </div>
 
 <style>
-	#container {
-		min-height: 100vh;
-
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-	}
 	#particle-simulation {
 		border: 1px solid rgba(255, 255, 255, 0.1);
 	}
 
 	#particle-simulation-settings {
 		margin-bottom: 1rem;
-	}
-
-	.particle-simulation-setting {
-		display: flex;
-		flex-direction: column;
-		max-width: fit-content;
 	}
 </style>
