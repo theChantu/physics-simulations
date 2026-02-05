@@ -34,10 +34,9 @@
 	},
 	"private": true,
 	"scripts": {
-		"build-wasm": "cd engine && wasm-pack build --target web",
-		"watch-wasm": "cd engine && wasm-pack build --target web --watch",
+		"build:wasm": "cd engine && wasm-pack build --target web",
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "bun run build:wasm && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
