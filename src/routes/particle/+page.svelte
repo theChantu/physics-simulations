@@ -11,7 +11,7 @@
 
 	onMount(() => {
 		init().then(() => {
-			console.log(return_message(Math.round(Math.random() * 100)));
+			console.log(return_message(Math.round(Math.random() * 30)));
 		});
 
 		context = canvas.getContext('2d');
