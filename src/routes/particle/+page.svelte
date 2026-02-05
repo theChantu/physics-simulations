@@ -6,9 +6,16 @@
 	const HEIGHT = 600;
 
 	let canvas: HTMLCanvasElement, context: CanvasRenderingContext2D | null;
+	let animationFrameId: ReturnType<typeof requestAnimationFrame>;
 
 	onMount(() => {
 		context = canvas.getContext('2d');
+
+		animationFrameId = requestAnimationFrame(loop);
+
+		return () => {
+			cancelAnimationFrame(animationFrameId);
+		};
 	});
 
 	class Particle {
@@ -191,18 +198,13 @@
 			p.y = Math.max(p.radius, Math.min(HEIGHT - p.radius, p.y));
 		}
 	}
-
 	const REF = (K * MAX_CHARGE) / (EPS2 * EPS);
 	function forceToColor(totalForce: number): string {
 		const x = Math.abs(totalForce) / REF;
-		// Use sqrt to make the falloff less dramatic (keep it visible)
+
 		const intensity = Math.min(1, Math.sqrt(x));
 
-		// Map intensity (0 to 1) to Hue (240 is Blue, 0 is Red)
-		// Strong force = Red/Orange (0-30), Weak force = Blue/Purple (200-240)
 		const hue = (1 - intensity) * 240;
-
-		// Use transparency so weak lines fade away smoothly
 		const alpha = Math.max(0.3, intensity);
 
 		return `hsla(${hue}, 100%, 50%, ${alpha})`;
@@ -326,9 +328,8 @@
 		}
 
 		draw();
-		requestAnimationFrame(loop);
+		animationFrameId = requestAnimationFrame(loop);
 	}
-	requestAnimationFrame(loop);
 
 	function handleMouseUp() {
 		isMouseDown = false;
@@ -381,18 +382,17 @@
 							bind:value={timeScale}
 						/>
 					</div>
-					<div class="mb-1 flex flex-col">
-						<label class="label" for="time-step">
-							<span class="label-text">Proton</span>
+					<div class="flex flex-col">
+						<label class="label" for="particle-buttons">
+							<span class="label-text">New Particle</span>
 						</label>
-						<button class="btn btn-error" on:click={() => handleAddParticle(1)}><Plus /></button>
-					</div>
-					<div class="mb-1 flex flex-col">
-						<label class="label" for="time-step">
-							<span class="label-text">Electron</span>
-						</label>
-						<button class="btn btn-primary" on:click={() => handleAddParticle(-1)}><Minus /></button
-						>
+						<div id="particle-buttons" class="flex gap-2">
+							<button class="btn btn-error" on:click={() => handleAddParticle(1)}><Plus /></button>
+
+							<button class="btn btn-primary" on:click={() => handleAddParticle(-1)}
+								><Minus /></button
+							>
+						</div>
 					</div>
 				</div>
 			</div>
