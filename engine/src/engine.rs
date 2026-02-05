@@ -1,7 +1,6 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-pub fn subtract(left: u64, right: u64) -> u64 {
-    left - right
+pub fn fibonacci(n: u32) -> u32 {
+    if n <= 1 {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Plus, Minus } from 'lucide-svelte';
-	import init from '../../../engine/pkg/engine';
+	import init, { return_message } from '../../../engine/pkg/engine';
 
 	const WIDTH = 1000;
 	const HEIGHT = 600;
@@ -11,7 +11,7 @@
 
 	onMount(() => {
 		init().then(() => {
-			console.log('WASM module initialized');
+			console.log(return_message(Math.round(Math.random() * 100)));
 		});
 
 		context = canvas.getContext('2d');

@@ -2,6 +2,10 @@ mod engine;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub fn add(left: u64, right: u64) -> u64 {
-    engine::add(left, right)
+pub fn return_message(n: u32) -> String {
+    return String::from(format!(
+        "The fibonacci of {} is {}.",
+        n,
+        engine::fibonacci(n)
+    ));
 }
