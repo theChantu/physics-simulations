@@ -36,7 +36,7 @@
 	"scripts": {
 		"build:wasm": "cd engine && wasm-pack build --target web",
 		"dev": "vite dev",
-		"build": "bun run build:wasm && vite build",
+		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
