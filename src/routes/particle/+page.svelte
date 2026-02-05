@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Plus, Minus } from 'lucide-svelte';
+	import * as wasmlib from '../../../engine/pkg';
+	import wasm from 'vite-plugin-wasm';
 
 	const WIDTH = 1000;
 	const HEIGHT = 600;
@@ -9,6 +11,10 @@
 	let animationFrameId: ReturnType<typeof requestAnimationFrame>;
 
 	onMount(() => {
+		wasmlib.default().then(() => {
+			console.log('WASM loaded');
+		});
+
 		context = canvas.getContext('2d');
 
 		animationFrameId = requestAnimationFrame(loop);

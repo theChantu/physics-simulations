@@ -2,9 +2,23 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import { sveltekit } from '@sveltejs/kit/vite';
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
+import wasmPackWatchPlugin from '@chantu/vite-wasm-pack-watcher';
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		wasm(),
+		topLevelAwait(),
+		wasmPackWatchPlugin({ buildCommand: 'wasm-pack build --target web', cwd: 'engine' })
+	],
+	server: {
+		fs: {
+			allow: ['./engine/pkg']
+		}
+	},
 	test: {
 		expect: { requireAssertions: true },
 		projects: [
