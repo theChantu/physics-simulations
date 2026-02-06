@@ -1,13 +1,41 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Plus, Minus } from 'lucide-svelte';
 	import init, { return_message } from '../../../engine/pkg/engine';
 
-	const WIDTH = 1000;
-	const HEIGHT = 600;
+	import SimControls from '$lib/components/SimControls.svelte';
+	import simSettings from '$lib/state/simSettings.svelte';
+	import { generateRandomCharge, generateRandomParticle } from '$lib/sim/utils';
+	import {
+		WIDTH,
+		HEIGHT,
+		K,
+		bounce,
+		EPS,
+		EPS2,
+		kSep,
+		INITIAL_PARTICLES,
+		MAX_CHARGE,
+		MIN_CHARGE,
+		MAX_STEPS,
+		DT
+	} from '$lib/sim/constants';
+
+	import type { Particle } from '$lib/sim/types';
 
 	let canvas: HTMLCanvasElement, context: CanvasRenderingContext2D | null;
 	let animationFrameId: ReturnType<typeof requestAnimationFrame>;
+
+	// Mouse interaction variables
+	let isMouseDown = false;
+	let mouseX = 0,
+		mouseY = 0,
+		lastMouseX = 0,
+		lastMouseY = 0;
+
+	let particles: Particle[] = [];
+
+	let last = performance.now();
+	let acc = 0;
 
 	onMount(() => {
 		init().then(() => {
@@ -22,83 +50,6 @@
 			cancelAnimationFrame(animationFrameId);
 		};
 	});
-
-	class Particle {
-		x: number;
-		y: number;
-		vx: number;
-		vy: number;
-		charge: number;
-		radius: number;
-		color: string;
-
-		constructor(x: number, y: number, vx: number, vy: number, charge: number, radius: number) {
-			this.x = x;
-			this.y = y;
-			this.vx = vx;
-			this.vy = vy;
-			this.charge = charge;
-			this.radius = radius;
-			this.color = charge > 0 ? 'red' : 'blue';
-		}
-	}
-
-	// Mouse interaction variables
-	let isMouseDown = false;
-	let mouseX = 0,
-		mouseY = 0,
-		lastMouseX = 0,
-		lastMouseY = 0;
-
-	// Particle system variables
-	const INITIAL_PARTICLES = 5;
-	const MAX_CHARGE = 4;
-	const MIN_CHARGE = 1;
-	const particles: Particle[] = [];
-
-	// Timing variables
-	const MAX_STEPS = 10;
-	const DT = 1 / 120;
-	let timeScale = 1; // 1 = real-time, <1 = slow-mo, >1 = fast-forward;
-	let last = performance.now();
-	let acc = 0;
-
-	// Simulation constants
-	const K = 80000; // Coulomb's constant (scaled for simulation)
-	const airResistance = 0.99;
-	const bounce = 0.5;
-	const EPS = 6;
-	const EPS2 = EPS * EPS;
-	let kSep = 0.2; // positional correction strength (0.2–1.2)
-	let kDamp = 0.6; // normal damping (0.1–0.6)
-
-	type ChargeSign = -1 | 1;
-
-	function generateRandomSign(): ChargeSign {
-		return Math.random() < 0.5 ? -1 : 1;
-	}
-
-	function generateRandomCharge(chargeSign?: ChargeSign) {
-		if (chargeSign === undefined) chargeSign = generateRandomSign();
-
-		const magnitude = Math.floor(Math.random() * (MAX_CHARGE - MIN_CHARGE + 1)) + MIN_CHARGE;
-
-		return chargeSign === 1 ? magnitude : -magnitude;
-	}
-
-	function generateRandomParticle(charge?: number) {
-		const chargeSign = generateRandomSign();
-		if (!charge) charge = generateRandomCharge(chargeSign);
-
-		return new Particle(
-			Math.random() * WIDTH,
-			Math.random() * HEIGHT,
-			(Math.random() - 0.5) * 50,
-			(Math.random() - 0.5) * 50,
-			charge,
-			10
-		);
-	}
 
 	for (let i = 0; i < INITIAL_PARTICLES; i++) {
 		const charge = i % 2 === 0 ? generateRandomCharge(1) : generateRandomCharge(-1);
@@ -159,7 +110,7 @@
 					const relN = rvx * nx + rvy * ny;
 
 					if (relN < 0) {
-						const damp = -relN * 0.5 * kDamp;
+						const damp = -relN * 0.5 * simSettings.kDamp;
 						A.vx += nx * damp;
 						A.vy += ny * damp;
 						B.vx -= nx * damp;
@@ -322,7 +273,7 @@
 		last = now;
 
 		// prevent massive dt after tab-switch / lag spikes
-		acc += Math.min(frameDt * timeScale, 0.05);
+		acc += Math.min(frameDt * simSettings.timeScale, 0.05);
 
 		let steps = 0;
 		while (acc >= DT && steps < MAX_STEPS) {
@@ -359,71 +310,20 @@
 		if (!particle) return;
 		particles.splice(particles.indexOf(particle), 1);
 	}
-
-	function handleAddParticle(charge: ChargeSign) {
-		const newParticle = generateRandomParticle(generateRandomCharge(charge));
-		particles.push(newParticle);
-	}
 </script>
 
 <div class="flex w-full items-center justify-center">
 	<div class="fit flex min-h-screen w-fit flex-col items-center justify-center">
-		<div class="flex self-start">
-			<div id="particle-simulation-settings">
-				<h1 class="text-3xl font-semibold">Particle Simulation</h1>
-				<div class="flex gap-4">
-					<div class="mb-1">
-						<label class="label" for="time-step">
-							<span class="label-text">Time Step: {timeScale}</span>
-						</label>
-						<input
-							class="range"
-							type="range"
-							id="time-step"
-							min="0"
-							max="10"
-							step="0.01"
-							bind:value={timeScale}
-						/>
-					</div>
-					<div class="mb-1">
-						<label class="label" for="kDamp">
-							<span class="label-text">kDamp: {kDamp}</span>
-						</label>
-						<input
-							class="range"
-							type="range"
-							id="kDamp"
-							min="0.1"
-							max="0.6"
-							step="0.01"
-							bind:value={kDamp}
-						/>
-					</div>
-					<div class="flex flex-col">
-						<label class="label" for="particle-buttons">
-							<span class="label-text">New Particle</span>
-						</label>
-						<div id="particle-buttons" class="flex gap-2">
-							<button class="btn btn-error" on:click={() => handleAddParticle(1)}><Plus /></button>
-
-							<button class="btn btn-primary" on:click={() => handleAddParticle(-1)}
-								><Minus /></button
-							>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+		<SimControls bind:particles />
 		<canvas
 			id="particle-simulation"
 			bind:this={canvas}
 			width={WIDTH}
 			height={HEIGHT}
-			on:mousedown={handleMouseDown}
-			on:mouseup={handleMouseUp}
-			on:mousemove={handleMoveMouse}
-			on:auxclick={handleAuxClick}
+			onmousedown={handleMouseDown}
+			onmouseup={handleMouseUp}
+			onmousemove={handleMoveMouse}
+			onauxclick={handleAuxClick}
 		></canvas>
 	</div>
 </div>
@@ -431,9 +331,5 @@
 <style>
 	#particle-simulation {
 		border: 1px solid rgba(255, 255, 255, 0.1);
-	}
-
-	#particle-simulation-settings {
-		margin-bottom: 1rem;
 	}
 </style>
