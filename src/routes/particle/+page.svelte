@@ -69,6 +69,8 @@
 	const bounce = 0.5;
 	const EPS = 6;
 	const EPS2 = EPS * EPS;
+	let kSep = 0.2; // positional correction strength (0.2–1.2)
+	let kDamp = 0.6; // normal damping (0.1–0.6)
 
 	type ChargeSign = -1 | 1;
 
@@ -111,9 +113,6 @@
 
 		ax.fill(0, 0, n);
 		ay.fill(0, 0, n);
-
-		const kSep = 0.6; // positional correction strength (0.2–1.2)
-		const kDamp = 0.25; // normal damping (0.1–0.6)
 
 		for (let a = 0; a < n; a++) {
 			const A = particles[a];
@@ -375,7 +374,7 @@
 				<div class="flex gap-4">
 					<div class="mb-1">
 						<label class="label" for="time-step">
-							<span class="label-text">Time Step</span>
+							<span class="label-text">Time Step: {timeScale}</span>
 						</label>
 						<input
 							class="range"
@@ -385,6 +384,20 @@
 							max="10"
 							step="0.01"
 							bind:value={timeScale}
+						/>
+					</div>
+					<div class="mb-1">
+						<label class="label" for="kDamp">
+							<span class="label-text">kDamp: {kDamp}</span>
+						</label>
+						<input
+							class="range"
+							type="range"
+							id="kDamp"
+							min="0.1"
+							max="0.6"
+							step="0.01"
+							bind:value={kDamp}
 						/>
 					</div>
 					<div class="flex flex-col">
