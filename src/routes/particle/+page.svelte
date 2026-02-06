@@ -3,8 +3,10 @@
 	import init, { return_message } from '../../../engine/pkg/engine';
 
 	import SimControls from '$lib/components/SimControls.svelte';
+	import SimToggleControls from '$lib/components/SimToggleControls.svelte';
 	import simSettings from '$lib/state/simSettings.svelte';
 	import { generateRandomCharge, generateRandomParticle } from '$lib/sim/utils';
+	import QuadTree from '$lib/sim/QuadTree';
 	import {
 		WIDTH,
 		HEIGHT,
@@ -57,78 +59,84 @@
 	}
 
 	function update() {
-		const n = particles.length;
+		const root = new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT }, 4);
 
-		const ax = new Float32Array(n);
-		const ay = new Float32Array(n);
+		for (const p of particles) {
+			root.insert(p);
+		}
+		root.root.calculateTotal();
 
-		ax.fill(0, 0, n);
-		ay.fill(0, 0, n);
+		for (const p of particles) {
+			const { fx, fy } = root.root.calculateForceOn(p);
 
-		for (let a = 0; a < n; a++) {
-			const A = particles[a];
-			for (let b = a + 1; b < n; b++) {
-				const B = particles[b];
+			// Update acceleration
+			const ax = fx;
+			const ay = fy;
 
-				const dx = A.x - B.x;
-				const dy = A.y - B.y;
+			// Collision stabilization (prevents sticking/jitter)
+			const neighbors = root.query({
+				x: p.x - p.radius * 2,
+				y: p.y - p.radius * 2,
+				width: p.radius * 4,
+				height: p.radius * 4
+			});
+			for (const other of neighbors) {
+				if (other === p) continue;
 
-				// softened distance for force
-				const distSq = dx * dx + dy * dy + EPS2;
-				const dist = Math.sqrt(distSq);
-				const invDist3 = 1 / (distSq * dist);
+				const dx = p.x - other.x;
+				const dy = p.y - other.y;
+				const dist = Math.hypot(dx, dy) || EPS;
+				const minDist = p.radius + other.radius;
 
-				// signed pair strength
-				const s = K * A.charge * B.charge * invDist3;
-
-				// apply equal/opposite acceleration
-				ax[a] += s * dx;
-				ay[a] += s * dy;
-				ax[b] -= s * dx;
-				ay[b] -= s * dy;
-
-				// collision stabilization (prevents sticking/jitter)
-				const minDist = A.radius + B.radius;
-				const realDistSq = dx * dx + dy * dy;
-				const realDist = Math.sqrt(realDistSq) || EPS;
-
-				if (realDist < minDist) {
-					const nx = dx / realDist;
-					const ny = dy / realDist;
-					const overlap = minDist - realDist;
+				if (dist < minDist) {
+					const nx = dx / dist;
+					const ny = dy / dist;
+					const overlap = minDist - dist;
 
 					// positional correction (split)
 					const corr = overlap * 0.5 * kSep;
-					A.x += nx * corr;
-					A.y += ny * corr;
-					B.x -= nx * corr;
-					B.y -= ny * corr;
+					p.x += nx * corr;
+					p.y += ny * corr;
+					other.x -= nx * corr;
+					other.y -= ny * corr;
 
 					// kill relative velocity into each other (normal damping)
-					const rvx = A.vx - B.vx;
-					const rvy = A.vy - B.vy;
+					const rvx = p.vx - other.vx;
+					const rvy = p.vy - other.vy;
 					const relN = rvx * nx + rvy * ny;
 
 					if (relN < 0) {
 						const damp = -relN * 0.5 * simSettings.kDamp;
-						A.vx += nx * damp;
-						A.vy += ny * damp;
-						B.vx -= nx * damp;
-						B.vy -= ny * damp;
+						p.vx += nx * damp;
+						p.vy += ny * damp;
+						other.vx -= nx * damp;
+						other.vy -= ny * damp;
 					}
 				}
 			}
-		}
 
-		// integrate velocities
-		for (let i = 0; i < n; i++) {
-			const p = particles[i];
-			p.vx += ax[i] * DT;
-			p.vy += ay[i] * DT;
-		}
+			// Integrate velocity
+			p.vx += ax * DT;
+			p.vy += ay * DT;
 
-		// integrate positions + walls
-		for (const p of particles) {
+			// Add gravity if enabled
+			if (simSettings.enableGravity) {
+				p.vy += simSettings.gravity * DT;
+			}
+
+			// Integrate position
+			p.x += p.vx * DT;
+			p.y += p.vy * DT;
+
+			// Boundary conditions
+			if (p.x < p.radius || p.x > WIDTH - p.radius) p.vx *= -bounce;
+			if (p.y < p.radius || p.y > HEIGHT - p.radius) p.vy *= -bounce;
+
+			// Push it out of the wall so it doesn't get stuck
+			p.x = Math.max(p.radius, Math.min(WIDTH - p.radius, p.x));
+			p.y = Math.max(p.radius, Math.min(HEIGHT - p.radius, p.y));
+
+			// Move particle with mouse if close enough
 			if (isMouseDown) {
 				const dist = Math.hypot(mouseX - p.x, mouseY - p.y);
 				if (dist <= p.radius * 2) {
@@ -140,17 +148,6 @@
 					p.vy = Math.max(-VMAX, Math.min(VMAX, (mouseY - lastMouseY) / DT));
 				}
 			}
-
-			p.x += p.vx * DT;
-			p.y += p.vy * DT;
-
-			// Boundary conditions
-			if (p.x < p.radius || p.x > WIDTH - p.radius) p.vx *= -bounce;
-			if (p.y < p.radius || p.y > HEIGHT - p.radius) p.vy *= -bounce;
-
-			// Push it out of the wall so it doesn't get stuck
-			p.x = Math.max(p.radius, Math.min(WIDTH - p.radius, p.x));
-			p.y = Math.max(p.radius, Math.min(HEIGHT - p.radius, p.y));
 		}
 	}
 	const REF = (K * MAX_CHARGE) / (EPS2 * EPS);
@@ -183,19 +180,21 @@
 			context.fillStyle = 'white';
 			context.fillText(`${p.charge > 0 ? '+' : '-'}${Math.abs(p.charge)}`, p.x, p.y);
 
-			// Draw velocity vector
-			const speed = Math.hypot(p.vx, p.vy);
-			const dirX = speed > 0 ? p.vx / speed : 1;
-			const dirY = speed > 0 ? p.vy / speed : 0;
-			const startX = p.x + dirX * p.radius;
-			const startY = p.y + dirY * p.radius;
-			context.beginPath();
-			context.moveTo(startX, startY);
-			context.lineTo(p.x + p.vx, p.y + p.vy);
-			context.strokeStyle = 'green';
-			context.stroke();
+			if (simSettings.enableVelocityVectors) {
+				// Draw velocity vector
+				const speed = Math.hypot(p.vx, p.vy);
+				const dirX = speed > 0 ? p.vx / speed : 1;
+				const dirY = speed > 0 ? p.vy / speed : 0;
+				const startX = p.x + dirX * p.radius;
+				const startY = p.y + dirY * p.radius;
+				context.beginPath();
+				context.moveTo(startX, startY);
+				context.lineTo(p.x + p.vx, p.y + p.vy);
+				context.strokeStyle = 'green';
+				context.stroke();
+			}
 
-			if (p.charge > 0) {
+			if (simSettings.enableFieldLines && p.charge > 0) {
 				// Draw field lines
 				context.strokeStyle = 'black';
 				for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4 / Math.abs(p.charge)) {
@@ -312,11 +311,12 @@
 	}
 </script>
 
-<div class="flex w-full items-center justify-center">
-	<div class="fit flex min-h-screen w-fit flex-col items-center justify-center">
-		<SimControls bind:particles />
+<div class="flex min-h-screen flex-col items-center justify-center">
+	<h1 class="p-4 text-3xl font-semibold">Particle Simulation</h1>
+	<div class="flex w-full flex-col items-center justify-center gap-4">
 		<canvas
 			id="particle-simulation"
+			class="block"
 			bind:this={canvas}
 			width={WIDTH}
 			height={HEIGHT}
@@ -325,6 +325,7 @@
 			onmousemove={handleMoveMouse}
 			onauxclick={handleAuxClick}
 		></canvas>
+		<SimControls bind:particles />
 	</div>
 </div>
 

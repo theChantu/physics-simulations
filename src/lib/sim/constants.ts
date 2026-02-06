@@ -11,7 +11,7 @@ const EPS2 = EPS * EPS;
 const kSep = 0.2; // positional correction strength (0.2–1.2)
 
 // Particle system variables
-const INITIAL_PARTICLES = 5;
+const INITIAL_PARTICLES = 8;
 const MAX_CHARGE = 4;
 const MIN_CHARGE = 1;
 
