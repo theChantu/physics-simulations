@@ -1,6 +1,6 @@
 import type { Particle as ParticleType, ParticleColor } from './types';
 
-export class Particle implements ParticleType {
+export default class Particle implements ParticleType {
 	constructor(
 		public x: number,
 		public y: number,

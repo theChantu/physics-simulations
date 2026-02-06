@@ -1,4 +1,4 @@
-import { Particle } from './Particle';
+import Particle from './Particle';
 import { WIDTH, HEIGHT, MAX_CHARGE, MIN_CHARGE } from './constants';
 
 import type { ChargeSign } from '../sim/types';
