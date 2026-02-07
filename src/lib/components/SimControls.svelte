@@ -25,7 +25,8 @@
 						<div class="w-full">
 							<label class="label" for="time-scale">
 								<span>
-									Time Scale: <span class="text-right tabular-nums">{simSettings.timeScale}</span
+									Time Scale: <span class="text-right tabular-nums"
+										>{simSettings.timeScale.toFixed(1)}</span
 									></span
 								>
 							</label>
@@ -35,7 +36,7 @@
 								id="time-scale"
 								min="0"
 								max="10"
-								step="1"
+								step="0.1"
 								bind:value={simSettings.timeScale}
 							/>
 						</div>
