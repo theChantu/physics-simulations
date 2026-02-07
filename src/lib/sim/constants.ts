@@ -19,6 +19,9 @@ const MIN_CHARGE = 1;
 const MAX_STEPS = 10;
 const DT = 1 / 120;
 
+// Tree constants
+const TREE_CAPACITY = 4;
+
 export {
 	WIDTH,
 	HEIGHT,
@@ -32,5 +35,6 @@ export {
 	MAX_CHARGE,
 	MIN_CHARGE,
 	MAX_STEPS,
-	DT
+	DT,
+	TREE_CAPACITY
 };

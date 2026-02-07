@@ -3,29 +3,32 @@
 	import init, { return_message } from '../../../engine/pkg/engine';
 
 	import SimControls from '$lib/components/SimControls.svelte';
-	import SimToggleControls from '$lib/components/SimToggleControls.svelte';
 	import simSettings from '$lib/state/simSettings.svelte';
 	import { generateRandomCharge, generateRandomParticle } from '$lib/sim/utils';
 	import QuadTree from '$lib/sim/QuadTree';
 	import {
 		WIDTH,
 		HEIGHT,
-		K,
 		bounce,
 		EPS,
-		EPS2,
 		kSep,
 		INITIAL_PARTICLES,
-		MAX_CHARGE,
-		MIN_CHARGE,
 		MAX_STEPS,
-		DT
+		DT,
+		TREE_CAPACITY
 	} from '$lib/sim/constants';
 
 	import type { Particle } from '$lib/sim/types';
+	import drawFieldLines from '$lib/sim/draw/drawFieldLines';
+	import drawVelocityVectors from '$lib/sim/draw/drawVelocityVectors';
+	import drawParticleLabel from '$lib/sim/draw/drawParticleLabel';
+	import drawParticle from '$lib/sim/draw/drawParticle';
+	import drawParticleOutline from '$lib/sim/draw/drawParticleOutline';
 
 	let canvas: HTMLCanvasElement, context: CanvasRenderingContext2D | null;
 	let animationFrameId: ReturnType<typeof requestAnimationFrame>;
+
+	let particles: Particle[] = [];
 
 	// Mouse interaction variables
 	let isMouseDown = false;
@@ -33,8 +36,6 @@
 		mouseY = 0,
 		lastMouseX = 0,
 		lastMouseY = 0;
-
-	let particles: Particle[] = [];
 
 	let last = performance.now();
 	let acc = 0;
@@ -58,13 +59,17 @@
 		particles.push(generateRandomParticle(charge));
 	}
 
-	function update() {
-		const root = new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT }, 4);
-
+	function buildQuadTree() {
+		const tree = new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT }, TREE_CAPACITY);
 		for (const p of particles) {
-			root.insert(p);
+			tree.insert(p);
 		}
-		root.root.calculateTotal();
+		tree.root.calculateTotal();
+		return tree;
+	}
+
+	function update() {
+		const root = buildQuadTree();
 
 		for (const p of particles) {
 			const { fx, fy } = root.root.calculateForceOn(p);
@@ -150,17 +155,6 @@
 			}
 		}
 	}
-	const REF = (K * MAX_CHARGE) / (EPS2 * EPS);
-	function forceToColor(totalForce: number): string {
-		const x = Math.abs(totalForce) / REF;
-
-		const intensity = Math.min(1, Math.sqrt(x));
-
-		const hue = (1 - intensity) * 240;
-		const alpha = Math.max(0.3, intensity);
-
-		return `hsla(${hue}, 100%, 50%, ${alpha})`;
-	}
 
 	function draw() {
 		if (!context) return;
@@ -170,98 +164,46 @@
 		context.textAlign = 'center';
 		context.textBaseline = 'middle';
 
+		const fieldTree = simSettings.enableFieldLines
+			? new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT }, TREE_CAPACITY)
+			: null;
+		const negativeTree = simSettings.enableFieldLines
+			? new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT }, TREE_CAPACITY)
+			: null;
+
+		let maxRadius = 0;
+		let hasNegativeParticles = false;
+
+		if (simSettings.enableFieldLines) {
+			if (!fieldTree || !negativeTree) return;
+
+			for (const p of particles) {
+				fieldTree.insert(p);
+
+				// Insert negative particles into a separate tree
+				if (p.charge >= 0) continue;
+				negativeTree.insert(p);
+				hasNegativeParticles = true;
+				if (p.radius > maxRadius) maxRadius = p.radius;
+			}
+
+			fieldTree.root.calculateTotal();
+		}
+
 		for (const p of particles) {
-			// Draw particle
-			context.beginPath();
-			context.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-			context.fillStyle = p.color;
-			context.fill();
-			// Draw charge sign
-			context.fillStyle = 'white';
-			context.fillText(`${p.charge > 0 ? '+' : '-'}${Math.abs(p.charge)}`, p.x, p.y);
+			drawParticle(context, p);
 
-			if (simSettings.enableVelocityVectors) {
-				// Draw velocity vector
-				const speed = Math.hypot(p.vx, p.vy);
-				const dirX = speed > 0 ? p.vx / speed : 1;
-				const dirY = speed > 0 ? p.vy / speed : 0;
-				const startX = p.x + dirX * p.radius;
-				const startY = p.y + dirY * p.radius;
-				context.beginPath();
-				context.moveTo(startX, startY);
-				context.lineTo(p.x + p.vx, p.y + p.vy);
-				context.strokeStyle = 'green';
-				context.stroke();
-			}
+			drawParticleLabel(context, p);
 
-			if (simSettings.enableFieldLines && p.charge > 0) {
-				// Draw field lines
-				context.strokeStyle = 'black';
-				for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4 / Math.abs(p.charge)) {
-					let currentX = p.x + Math.cos(angle) * p.radius;
-					let currentY = p.y + Math.sin(angle) * p.radius;
+			if (simSettings.enableVelocityVectors) drawVelocityVectors(context, p);
 
-					// Limit steps so it doesn't freeze
-					outer: for (let step = 0; step < 120; step++) {
-						let netFx = 0;
-						let netFy = 0;
+			if (simSettings.enableFieldLines)
+				drawFieldLines(context, p, fieldTree, negativeTree, hasNegativeParticles, maxRadius);
 
-						const prevX = currentX;
-						const prevY = currentY;
-
-						for (const j of particles) {
-							const dx = currentX - j.x;
-							const dy = currentY - j.y;
-							const distSq = dx * dx + dy * dy + EPS;
-							const dist = Math.sqrt(distSq);
-
-							const invDist3 = 1 / (distSq * dist);
-							const s = K * j.charge * invDist3;
-
-							netFx += s * dx;
-							netFy += s * dy;
-						}
-
-						const totalForce = Math.hypot(netFx, netFy);
-						if (totalForce <= 0) break;
-
-						const STEP_MIN = 1;
-						const STEP_MAX = 6;
-						const STEP_K = 80;
-
-						const stepLen = Math.max(STEP_MIN, Math.min(STEP_MAX, STEP_K / (totalForce + 1)));
-						currentX = currentX + (netFx / totalForce) * stepLen;
-						currentY = currentY + (netFy / totalForce) * stepLen;
-
-						// Check for collision with negative particles
-						for (const j of particles) {
-							if (j.charge >= 0) continue;
-							const dx = currentX - j.x;
-							const dy = currentY - j.y;
-
-							const dist = Math.hypot(dx, dy) || EPS;
-							if (dist < j.radius) {
-								context.lineTo(j.x + (dx / dist) * j.radius, j.y + (dy / dist) * j.radius);
-								break outer;
-							}
-						}
-
-						context.beginPath();
-						context.moveTo(prevX, prevY);
-						context.lineTo(currentX, currentY);
-						context.strokeStyle = forceToColor(totalForce);
-						context.stroke();
-					}
-				}
-			}
-
-			// Draw outline if mouse is near
+			// Draw particle outline if mouse is hovering over it
 			const mouseDist = Math.hypot(mouseX - p.x, mouseY - p.y);
 			if (mouseDist <= p.radius * 2) {
-				context.beginPath();
-				context.arc(p.x, p.y, p.radius + 5, 0, Math.PI * 2);
-				context.strokeStyle = 'red';
-				context.stroke();
+				drawParticleOutline(context, p);
 			}
 		}
 	}

@@ -25,8 +25,7 @@
 						<div class="w-full">
 							<label class="label" for="time-scale">
 								<span>
-									Time Scale: <span class="text-right tabular-nums"
-										>{simSettings.timeScale.toFixed(2)}</span
+									Time Scale: <span class="text-right tabular-nums">{simSettings.timeScale}</span
 									></span
 								>
 							</label>
@@ -36,14 +35,14 @@
 								id="time-scale"
 								min="0"
 								max="10"
-								step="0.01"
+								step="1"
 								bind:value={simSettings.timeScale}
 							/>
 						</div>
 						<div class="w-full">
 							<label class="label" for="gravity">
 								<span>Gravity: </span>
-								<span class="text-right tabular-nums">{simSettings.gravity.toFixed(2)}</span>
+								<span class="text-right tabular-nums">{simSettings.gravity}</span>
 							</label>
 							<input
 								class="range"
