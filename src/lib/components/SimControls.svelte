@@ -67,7 +67,7 @@
 								type="range"
 								id="kDamp"
 								min="0.1"
-								max="0.6"
+								max="1"
 								step="0.01"
 								bind:value={simSettings.kDamp}
 							/>
