@@ -3,14 +3,47 @@
 
 	import simSettings from '$lib/state/simSettings.svelte';
 	import { generateRandomCharge, generateRandomParticle } from '$lib/sim/utils';
+	import { onMount } from 'svelte';
 
-	import type { Particle, ChargeSign } from '$lib/sim/types';
+	import type { Particle } from '$lib/sim/types';
+
+	onMount(() => {
+		window.addEventListener('keyup', (e) => {
+			if (e.key === 'Enter') {
+				handleSpawnParticle();
+			}
+		});
+
+		return () => {
+			window.removeEventListener('keyup', () => {});
+		};
+	});
 
 	export let particles: Particle[];
 
-	function handleAddParticle(charge: ChargeSign) {
-		const newParticle = generateRandomParticle(generateRandomCharge(charge));
-		particles.push(newParticle);
+	let charge: number | undefined;
+	let amount: number = 1;
+
+	function handleSpawnParticle() {
+		if (charge === undefined || isNaN(charge) || charge === 0) {
+			// Clear input if invalid
+			charge = undefined;
+			return;
+		}
+
+		for (let i = 0; i < amount; i++) {
+			const newParticle = generateRandomParticle(charge || generateRandomCharge());
+			particles.push(newParticle);
+		}
+
+		// Clear inputs
+		charge = undefined;
+		amount = 1;
+	}
+
+	function handleClearParticles() {
+		// Clear the array while keeping the reference intact
+		particles.splice(0, particles.length);
 	}
 </script>
 
@@ -76,19 +109,38 @@
 					<!-- Particle controls -->
 					<div class="flex flex-col justify-center">
 						<div class="flex flex-col gap-4">
-							<div class="flex flex-col">
-								<label class="label" for="particle-buttons">
-									<span>New Particle</span>
-								</label>
+							<div class="flex flex-col gap-2">
 								<div id="particle-buttons" class="flex gap-2">
-									<button class="btn btn-sm btn-error" onclick={() => handleAddParticle(1)}
-										><Plus /></button
-									>
-
-									<button class="btn btn-sm btn-primary" onclick={() => handleAddParticle(-1)}
-										><Minus /></button
-									>
+									<label for="particle-charge">
+										<span>Charge</span>
+										<input
+											id="particle-charge"
+											type="number"
+											class="input input-sm"
+											required
+											placeholder="Charge (+/-)"
+											bind:value={charge}
+										/>
+									</label>
+									<label for="particle-amount">
+										<span>Amount</span>
+										<input
+											id="particle-amount"
+											type="number"
+											class="input input-sm"
+											required
+											min="1"
+											placeholder="Amount"
+											bind:value={amount}
+										/>
+									</label>
 								</div>
+								<button class="btn btn-sm btn-primary" onclick={handleSpawnParticle}
+									>Spawn Particle(s)</button
+								>
+								<button class="btn btn-sm btn-error" onclick={handleClearParticles}
+									>Clear Particle(s)</button
+								>
 							</div>
 							<div class="flex gap-4">
 								<div class="flex flex-col">

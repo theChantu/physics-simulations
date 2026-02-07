@@ -67,8 +67,6 @@ export default function drawFieldLines(
 				break;
 			}
 
-			// Check for collision with nearby negative particles only
-			if (!hasNegativeParticles) break;
 			const queryRadius = maxRadius + EPS;
 			const nearbyNegatives =
 				negativeTree && queryRadius > 0
@@ -85,10 +83,13 @@ export default function drawFieldLines(
 
 				const dist = Math.hypot(dx, dy) || EPS;
 				if (dist < negative.radius) {
+					context.beginPath();
+					context.moveTo(prevX, prevY);
 					context.lineTo(
 						negative.x + (dx / dist) * negative.radius,
 						negative.y + (dy / dist) * negative.radius
 					);
+					context.stroke();
 					break outer;
 				}
 			}
